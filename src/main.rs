@@ -1,4 +1,8 @@
-use iced::{button, Align, Button, Column, Element, Sandbox, Settings, Text};
+use iced::{
+    button, executor, futures, Align, Application, Button, Clipboard, Column, Command, Element,
+    Settings, Text,
+};
+use serde::Deserialize;
 
 pub fn main() -> iced::Result {
     Counter::run(Settings::default())
@@ -11,30 +15,41 @@ struct Counter {
     decrement_button: button::State,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum Message {
     IncrementPressed,
     DecrementPressed,
+    PokemonFound(Result<Pokemon, String>),
 }
 
-impl Sandbox for Counter {
+// TODO: make web request using reqwest and render result
+
+impl Application for Counter {
+    type Executor = executor::Default;
+    type Flags = ();
     type Message = Message;
 
-    fn new() -> Self {
-        Self::default()
+    fn new(_flags: ()) -> (Counter, Command<Message>) {
+        (Self::default(), Command::none())
     }
 
     fn title(&self) -> String {
         String::from("Counter - Iced")
     }
 
-    fn update(&mut self, message: Message) {
+    fn update(&mut self, message: Message, _c: &mut Clipboard) -> Command<Message> {
         match message {
             Message::IncrementPressed => {
                 self.value += 1;
+                Command::perform(Pokemon::bla(), Message::PokemonFound)
             }
             Message::DecrementPressed => {
                 self.value -= 1;
+                Command::none()
+            }
+            Message::PokemonFound(_) => {
+                self.value = 555;
+                Command::none()
             }
         }
     }
@@ -53,5 +68,31 @@ impl Sandbox for Counter {
                     .on_press(Message::DecrementPressed),
             )
             .into()
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct Pokemon {
+    number: u16,
+    name: String,
+    description: String,
+}
+
+impl Pokemon {
+    async fn bla() -> Result<Pokemon, String> {
+        #[derive(Debug, Deserialize)]
+        struct Entry {
+            id: u32,
+            name: String,
+        }
+        let id = 1;
+
+        let url = format!("https://pokeapi.co/api/v2/pokemon-species/{}", id);
+        reqwest::get(&url)
+            .await
+            .map_err(|_| String::new())?
+            .json()
+            .await
+            .map_err(|_| String::new())
     }
 }
