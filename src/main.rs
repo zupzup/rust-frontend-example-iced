@@ -2,8 +2,9 @@ use iced::{
     button, executor, Align, Application, Button, Clipboard, Column, Command, Element, Settings,
     Text,
 };
-use serde::Deserialize;
-use wasm_bindgen::UnwrapThrowExt;
+// use wasm_bindgen::UnwrapThrowExt;
+
+mod data;
 
 pub fn main() -> iced::Result {
     App::run(Settings::default())
@@ -15,24 +16,19 @@ enum Route {
     Detail(i32),
 }
 
-// TODO: posts and comments from http://jsonplaceholder.typicode.com/
-// TODO: list of posts, when clicking on post, go to detail showing posts
-// TODO: ultra basic routing between list and detail, no web stuff
-
 struct App {
-    value: i32,
-    increment_button: button::State,
-    decrement_button: button::State,
     list_button: button::State,
-    detail_button: button::State,
     route: Route,
+    posts: Option<Vec<Post>>,
+    post: Option<Post>,
+    comments: Option<Vec<Comment>>,
 }
 
 #[derive(Debug, Clone)]
 enum Message {
-    IncrementPressed,
-    DecrementPressed,
-    PokemonFound(Result<Pokemon, String>),
+    PostsFound(Result<Vec<data::Post>, String>),
+    PostFound(Result<data::Post, String>),
+    CommentsFound(Result<Vec<data::Comment>, String>),
     GoToList,
     GoToDetail(i32),
 }
@@ -47,14 +43,13 @@ impl Application for App {
     fn new(_flags: ()) -> (App, Command<Message>) {
         (
             App {
-                value: 0,
-                increment_button: button::State::new(),
-                decrement_button: button::State::new(),
                 list_button: button::State::new(),
-                detail_button: button::State::new(),
                 route: Route::List,
+                posts: None,
+                post: None,
+                comments: None,
             },
-            Command::none(),
+            Command::perform(data::Post::fetch_all(), Message::PostsFound),
         )
     }
 
@@ -65,82 +60,185 @@ impl Application for App {
     fn update(&mut self, message: Message, _c: &mut Clipboard) -> Command<Message> {
         match message {
             Message::GoToList => {
+                self.post = None;
+                self.comments = None;
                 self.route = Route::List;
-                let win = web_sys::window().unwrap_throw();
-                win.location().set_hash("/list").unwrap_throw();
-                Command::none()
+                // let win = web_sys::window().unwrap_throw();
+                // win.location().set_hash("/list").unwrap_throw();
+                Command::perform(data::Post::fetch_all(), Message::PostsFound)
             }
             Message::GoToDetail(id) => {
-                let win = web_sys::window().unwrap_throw();
-                win.location()
-                    .set_hash(&format!("/detail/{}", id))
-                    .unwrap_throw();
+                // let win = web_sys::window().unwrap_throw();
+                // win.location()
+                //     .set_hash(&format!("/detail/{}", id))
+                //     .unwrap_throw();
                 self.route = Route::Detail(id);
-                Command::perform(Pokemon::bla(id), Message::PokemonFound)
+                self.posts = None;
+                Command::batch(vec![
+                    Command::perform(data::Post::fetch(id), Message::PostFound),
+                    Command::perform(data::Comment::fetch_for_post(id), Message::CommentsFound),
+                ])
             }
-            Message::IncrementPressed => {
-                self.value += 1;
+            Message::PostsFound(posts) => {
+                match posts {
+                    Err(_) => (),
+                    Ok(data) => {
+                        self.posts = Some(
+                            data.into_iter()
+                                .map(|post| Post {
+                                    detail_button: button::State::new(),
+                                    post,
+                                })
+                                .collect(),
+                        );
+                    }
+                };
                 Command::none()
             }
-            Message::DecrementPressed => {
-                self.value -= 1;
+            Message::PostFound(post) => {
+                match post {
+                    Err(_) => (),
+                    Ok(data) => {
+                        self.post = Some(Post {
+                            detail_button: button::State::new(),
+                            post: data,
+                        });
+                    }
+                }
                 Command::none()
             }
-            Message::PokemonFound(_) => {
-                self.value = 555;
+            Message::CommentsFound(comments) => {
+                match comments {
+                    Err(_) => (),
+                    Ok(data) => {
+                        self.comments = Some(
+                            data.into_iter()
+                                .map(|comment| Comment { comment })
+                                .collect(),
+                        );
+                    }
+                };
                 Command::none()
             }
         }
     }
 
     fn view(&mut self) -> Element<Message> {
-        let col = Column::new()
-            .padding(20)
-            .align_items(Align::Center)
-            .push(Button::new(&mut self.list_button, Text::new("Home")).on_press(Message::GoToList))
-            .push(
-                Button::new(&mut self.detail_button, Text::new("Detail"))
-                    .on_press(Message::GoToDetail(1)),
-            )
-            .push(
-                Button::new(&mut self.increment_button, Text::new("blaaah"))
-                    .on_press(Message::IncrementPressed),
-            )
-            .push(Text::new(self.value.to_string()).size(50))
-            .push(
-                Button::new(&mut self.decrement_button, Text::new("Decrement"))
-                    .on_press(Message::DecrementPressed),
-            );
+        let col = Column::new().padding(20).align_items(Align::Center).push(
+            Button::new(&mut self.list_button, Text::new("Home")).on_press(Message::GoToList),
+        );
         match self.route {
-            Route::List => col.push(Text::new("List page".to_owned()).size(50)).into(),
-            Route::Detail(id) => col
-                .push(Text::new(format!("Detail page: {}", id)).size(50))
-                .into(),
+            Route::List => {
+                let posts: Element<_> = match self.posts {
+                    None => Column::new()
+                        .push(Text::new("loading...".to_owned()).size(20))
+                        .into(),
+                    Some(ref mut p) => App::render_posts(p),
+                };
+                col.push(Text::new("List page".to_owned()).size(50))
+                    .push(posts)
+                    .into()
+            }
+            Route::Detail(id) => {
+                let post: Element<_> = match self.post {
+                    None => Column::new()
+                        .push(Text::new("loading...".to_owned()).size(20))
+                        .into(),
+                    Some(ref mut p) => p.view(),
+                };
+                let comments: Element<_> = match self.comments {
+                    None => Column::new()
+                        .push(Text::new("loading...".to_owned()).size(20))
+                        .into(),
+                    Some(ref mut c) => App::render_comments(c),
+                };
+
+                col.push(Text::new(format!("Detail page: {}", id)).size(50))
+                    .push(post)
+                    .push(comments)
+                    .into()
+            }
         }
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-struct Pokemon {
-    number: u16,
-    name: String,
-    description: String,
+impl App {
+    fn render_posts(posts: &mut Vec<Post>) -> Element<Message> {
+        let c = Column::new();
+        let posts: Element<_> = posts
+            .iter_mut()
+            .fold(Column::new().spacing(10), |col, p| {
+                col.push(p.view_in_list())
+            })
+            .into();
+        c.push(posts).into()
+    }
+
+    fn render_comments(comments: &Vec<Comment>) -> Element<Message> {
+        let c = Column::new();
+        let comments: Element<_> = comments
+            .iter()
+            .fold(Column::new().spacing(10), |col, c| col.push(c.view()))
+            .into();
+        c.push(Text::new(String::from("Comments:")).size(20))
+            .push(comments)
+            .into()
+    }
 }
 
-impl Pokemon {
-    async fn bla(id: i32) -> Result<Pokemon, String> {
-        #[derive(Debug, Deserialize)]
-        struct Entry {
-            id: u32,
-            name: String,
-        }
+struct Post {
+    detail_button: button::State,
+    post: data::Post,
+}
 
-        let url = format!("https://pokeapi.co/api/v2/pokemon-species/{}", id);
-        reqwest::get(&url)
-            .await
-            .map_err(|_| String::new())?
-            .json()
-            .await
-            .map_err(|_| String::new())
+impl Post {
+    fn view(&mut self) -> Element<Message> {
+        let c = Column::new();
+        c.push(
+            Text::new(format!(
+                "{} | {} | {} | {}",
+                self.post.id, self.post.user_id, self.post.title, self.post.body
+            ))
+            .size(12),
+        )
+        .into()
+    }
+
+    fn view_in_list(&mut self) -> Element<Message> {
+        let c = Column::new();
+        c.push(
+            Text::new(format!(
+                "{} | {} | {} | {}",
+                self.post.id, self.post.user_id, self.post.title, self.post.body
+            ))
+            .size(12),
+        )
+        .push(
+            Button::new(&mut self.detail_button, Text::new("Detail"))
+                .on_press(Message::GoToDetail(self.post.id)),
+        )
+        .into()
+    }
+}
+
+struct Comment {
+    comment: data::Comment,
+}
+
+impl Comment {
+    fn view(&self) -> Element<Message> {
+        let c = Column::new();
+        c.push(
+            Text::new(format!(
+                "{} | {} | {} | {} | {}",
+                self.comment.post_id,
+                self.comment.id,
+                self.comment.name,
+                self.comment.email,
+                self.comment.body
+            ))
+            .size(12),
+        )
+        .into()
     }
 }
