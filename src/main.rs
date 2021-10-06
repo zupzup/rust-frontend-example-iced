@@ -1,8 +1,7 @@
 use iced::{
-    button, executor, Align, Application, Button, Clipboard, Column, Command, Element, Settings,
-    Text,
+    button, executor, Align, Application, Button, Clipboard, Column, Command, Element, Row,
+    Settings, Text, VerticalAlignment,
 };
-// use wasm_bindgen::UnwrapThrowExt;
 
 mod data;
 
@@ -32,8 +31,6 @@ enum Message {
     GoToList,
     GoToDetail(i32),
 }
-// TODO: basic router like https://github.com/fitzgen/dodrio/blob/master/examples/todomvc/src/router.rs
-// TODO: don't implement, just mention in post
 
 impl Application for App {
     type Executor = executor::Default;
@@ -63,15 +60,9 @@ impl Application for App {
                 self.post = None;
                 self.comments = None;
                 self.route = Route::List;
-                // let win = web_sys::window().unwrap_throw();
-                // win.location().set_hash("/list").unwrap_throw();
                 Command::perform(data::Post::fetch_all(), Message::PostsFound)
             }
             Message::GoToDetail(id) => {
-                // let win = web_sys::window().unwrap_throw();
-                // win.location()
-                //     .set_hash(&format!("/detail/{}", id))
-                //     .unwrap_throw();
                 self.route = Route::Detail(id);
                 self.posts = None;
                 Command::batch(vec![
@@ -124,36 +115,41 @@ impl Application for App {
     }
 
     fn view(&mut self) -> Element<Message> {
-        let col = Column::new().padding(20).align_items(Align::Center).push(
-            Button::new(&mut self.list_button, Text::new("Home")).on_press(Message::GoToList),
-        );
+        let col = Column::new()
+            .max_width(600)
+            .spacing(10)
+            .padding(10)
+            .align_items(Align::Center)
+            .push(
+                Button::new(&mut self.list_button, Text::new("Home")).on_press(Message::GoToList),
+            );
         match self.route {
             Route::List => {
                 let posts: Element<_> = match self.posts {
                     None => Column::new()
-                        .push(Text::new("loading...".to_owned()).size(20))
+                        .push(Text::new("loading...".to_owned()).size(15))
                         .into(),
                     Some(ref mut p) => App::render_posts(p),
                 };
-                col.push(Text::new("List page".to_owned()).size(50))
+                col.push(Text::new("Home".to_owned()).size(20))
                     .push(posts)
                     .into()
             }
             Route::Detail(id) => {
                 let post: Element<_> = match self.post {
                     None => Column::new()
-                        .push(Text::new("loading...".to_owned()).size(20))
+                        .push(Text::new("loading...".to_owned()).size(15))
                         .into(),
                     Some(ref mut p) => p.view(),
                 };
                 let comments: Element<_> = match self.comments {
                     None => Column::new()
-                        .push(Text::new("loading...".to_owned()).size(20))
+                        .push(Text::new("loading...".to_owned()).size(15))
                         .into(),
                     Some(ref mut c) => App::render_comments(c),
                 };
 
-                col.push(Text::new(format!("Detail page: {}", id)).size(50))
+                col.push(Text::new(format!("Post: {}", id)).size(20))
                     .push(post)
                     .push(comments)
                     .into()
@@ -180,7 +176,7 @@ impl App {
             .iter()
             .fold(Column::new().spacing(10), |col, c| col.push(c.view()))
             .into();
-        c.push(Text::new(String::from("Comments:")).size(20))
+        c.push(Text::new(String::from("Comments:")).size(15))
             .push(comments)
             .into()
     }
@@ -193,28 +189,25 @@ struct Post {
 
 impl Post {
     fn view(&mut self) -> Element<Message> {
-        let c = Column::new();
-        c.push(
-            Text::new(format!(
-                "{} | {} | {} | {}",
-                self.post.id, self.post.user_id, self.post.title, self.post.body
-            ))
-            .size(12),
-        )
-        .into()
+        Column::new()
+            .push(Text::new(format!("id: {}", self.post.id)).size(12))
+            .push(Text::new(format!("user_id: {}", self.post.user_id)).size(12))
+            .push(Text::new(format!("title: {}", self.post.title)).size(12))
+            .push(Text::new(self.post.body.to_owned()).size(12))
+            .into()
     }
 
     fn view_in_list(&mut self) -> Element<Message> {
-        let c = Column::new();
-        c.push(
-            Text::new(format!(
-                "{} | {} | {} | {}",
-                self.post.id, self.post.user_id, self.post.title, self.post.body
-            ))
-            .size(12),
+        let r = Row::new().padding(5).spacing(5);
+        r.push(
+            Column::new().spacing(5).push(
+                Text::new(self.post.title.to_owned())
+                    .size(12)
+                    .vertical_alignment(VerticalAlignment::Center),
+            ),
         )
         .push(
-            Button::new(&mut self.detail_button, Text::new("Detail"))
+            Button::new(&mut self.detail_button, Text::new("Detail").size(12))
                 .on_press(Message::GoToDetail(self.post.id)),
         )
         .into()
@@ -227,18 +220,10 @@ struct Comment {
 
 impl Comment {
     fn view(&self) -> Element<Message> {
-        let c = Column::new();
-        c.push(
-            Text::new(format!(
-                "{} | {} | {} | {} | {}",
-                self.comment.post_id,
-                self.comment.id,
-                self.comment.name,
-                self.comment.email,
-                self.comment.body
-            ))
-            .size(12),
-        )
-        .into()
+        Column::new()
+            .push(Text::new(format!("name: {}", self.comment.name)).size(12))
+            .push(Text::new(format!("email: {}", self.comment.email)).size(12))
+            .push(Text::new(self.comment.body.to_owned()).size(12))
+            .into()
     }
 }
